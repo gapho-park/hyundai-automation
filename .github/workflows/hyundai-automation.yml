@@ -1,13 +1,16 @@
 name: Hyundai Card Automation
+
 on:
   schedule:
     # 평일 월~금 오전 9시 (UTC 기준, 한국시간은 UTC+9)
     # 한국 오전 9시 = UTC 00:00
     - cron: '0 0 * * 1-5'
   workflow_dispatch:
+
 jobs:
   automation:
     runs-on: ubuntu-24.04
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,7 +27,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install webdriver-manager
-          # requirements.txt 설치는 나중에
       
       - name: Install system dependencies
         run: |
@@ -75,7 +77,7 @@ jobs:
           name: automation-logs
           path: |
             hyundai_automation.log
-            *.html
+            debug_page_source.html
           retention-days: 7
       
       - name: Upload results on success
@@ -83,7 +85,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: automation-results
-          path: |
-            *.csv
-            *.xlsx
+          path: /home/runner/Downloads/hyundai_auto/
           retention-days: 30
