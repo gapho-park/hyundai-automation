@@ -1,0 +1,32 @@
+selenium==4.15.2
+pandas==2.1.4
+google-auth==2.26.2
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.107.0
+gspread==6.0.0
+openpyxl==3.1.2
+xlrd==2.0.1
+```
+
+**Commit changes** → `Add requirements.txt` → **Commit directly**
+
+---
+
+### C) `.gitignore` 수정
+
+레포 홈 → `.gitignore` 클릭 → 편집 (연필 아이콘)
+
+아래 내용 추가:
+```
+# Sensitive files
+client_secret.json
+credentials.json
+oauth_credentials.json
+token.pickle
+
+# Temp files
+downloads/
+*.crdownload
+*.tmp
+hyundai_automation.log
