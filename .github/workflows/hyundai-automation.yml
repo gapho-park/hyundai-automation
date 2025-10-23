@@ -21,18 +21,22 @@ jobs:
         with:
           python-version: 3.11
 
-      - name: Install system dependencies
+      - name: Install system dependencies and fix Chrome
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            google-chrome-stable \
-            chromium-chromedriver \
-            wget \
-            unzip
           
-          # Chrome 버전 확인
-          google-chrome --version
-          chromedriver --version
+          # Chromium (snap 버전) 설치
+          sudo apt-get install -y chromium-browser chromium-chromedriver
+          
+          # Chromium snap 바이너리를 /usr/bin/google-chrome으로 symlink
+          sudo ln -sf /snap/chromium/current/usr/bin/chromium /usr/bin/google-chrome
+          
+          # ChromeDriver도 snap 버전으로 symlink
+          sudo ln -sf /snap/chromium/current/usr/bin/chromedriver /usr/bin/chromedriver
+          
+          # 버전 확인
+          /snap/chromium/current/usr/bin/chromium --version
+          /snap/chromium/current/usr/bin/chromedriver --version
 
       - name: Install Python dependencies
         run: |
@@ -49,6 +53,7 @@ jobs:
         env:
           CHROME_BIN: /usr/bin/google-chrome
           CHROMEDRIVER_PATH: /usr/bin/chromedriver
+          CI: true
         run: |
           python hyundai_automation.py
 
