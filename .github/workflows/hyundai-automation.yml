@@ -31,8 +31,8 @@ jobs:
             chromium-browser \
             chromium-chromedriver \
             libxss1 \
-            libappindicator1 \
-            libindicator7
+            fonts-liberation \
+            xdg-utils
       
       - name: Verify Chrome installation
         run: |
