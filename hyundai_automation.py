@@ -376,6 +376,25 @@ class HyundaiCardBot:
             
             time.sleep(5)
             
+            # 페이지 HTML 디버그 출력
+            logger.info("🔍 페이지 HTML 분석...")
+            page_html = driver.page_source[:2000]
+            logger.info(f"페이지 HTML 일부: {page_html}")
+            
+            # 모든 input 요소 찾기
+            all_inputs = driver.find_elements(By.TAG_NAME, "input")
+            logger.info(f"전체 input 요소 개수: {len(all_inputs)}")
+            
+            for idx, inp in enumerate(all_inputs):
+                try:
+                    name = inp.get_attribute("name")
+                    input_type = inp.get_attribute("type")
+                    inp_id = inp.get_attribute("id")
+                    displayed = inp.is_displayed()
+                    logger.info(f"  [{idx}] name={name}, type={input_type}, id={inp_id}, displayed={displayed}")
+                except:
+                    pass
+            
             # 인증번호 입력 필드 찾기
             logger.info("🔍 인증번호 입력 필드 찾기...")
             
@@ -384,25 +403,35 @@ class HyundaiCardBot:
                 "input[name='p2']",
                 "input[name='p2_temp']",
                 "input[type='password']",
-                "input[type='text'][id*='auth']",
-                "input[type='text']"
+                "input[type='text']",
+                "input"
             ]
             
             for selector in selectors:
                 try:
                     elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    logger.info(f"  선택자 '{selector}' → {len(elements)}개 발견")
+                    
                     for element in elements:
-                        if element.is_displayed() and element.is_enabled():
-                            input_field = element
-                            logger.info(f"✅ 입력 필드 발견: {selector}")
-                            break
+                        try:
+                            if element.is_displayed():
+                                input_field = element
+                                logger.info(f"✅ 입력 필드 발견: {selector}")
+                                break
+                        except:
+                            pass
+                    
                     if input_field:
                         break
-                except:
+                except Exception as e:
+                    logger.warning(f"  선택자 '{selector}' 오류: {e}")
                     continue
             
             if not input_field:
                 logger.error("❌ 인증번호 입력 필드를 찾을 수 없습니다.")
+                logger.error("페이지 소스를 저장합니다...")
+                with open("/tmp/hyundai_auto/page_source.html", "w", encoding="utf-8") as f:
+                    f.write(driver.page_source)
                 return None
             
             # 인증번호 입력
