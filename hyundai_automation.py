@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-라포랩스 현대카드 OAuth 자동화 (GitHub Actions 버전 - 수정됨)
+라포랩스 현대카드 OAuth 자동화 (CI 환경 최적화 버전)
 Gmail → HTML 첨부파일 다운로드 → 보안메일 처리 → 스프레드시트 업데이트
 """
 
@@ -13,12 +13,11 @@ import pandas as pd
 import base64
 import pickle
 import json
-import shutil
 from pathlib import Path
 import logging
 from datetime import datetime
 
-# 라이브러리 import (에러 발생시 설치 가이드 출력)
+# 라이브러리 import
 try:
     from selenium import webdriver
     from selenium.webdriver.common.by import By
@@ -32,11 +31,8 @@ try:
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
     import gspread
-    from webdriver_manager.chrome import ChromeDriverManager
 except ImportError as e:
-    print(f"❌ 필수 라이브러리가 설치되어 있지 않습니다: {e}")
-    print("\n다음 명령어로 설치해주세요:")
-    print("pip install selenium pandas google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client gspread openpyxl xlrd webdriver-manager")
+    print(f"필수 라이브러리가 설치되어 있지 않습니다: {e}")
     sys.exit(1)
 
 # 로깅 설정
@@ -50,9 +46,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 class HyundaiCardBot:
-    """현대카드 OAuth 자동화 봇 (GitHub Actions 호환)"""
+    """현대카드 OAuth 자동화 봇"""
     
     def __init__(self):
         # 라포랩스 설정
@@ -67,103 +62,17 @@ class HyundaiCardBot:
             'https://www.googleapis.com/auth/drive'
         ]
         
+        # 다운로드 경로
+        self.download_path = os.path.join(os.path.expanduser("~"), "Downloads", "hyundai_auto")
+        os.makedirs(self.download_path, exist_ok=True)
+        
         # CI 환경 감지
         self.is_ci = os.environ.get('CI') == 'true' or os.environ.get('GITHUB_ACTIONS') == 'true'
         
-        # 다운로드 경로 설정
-        if self.is_ci:
-            self.download_path = "/tmp/hyundai_auto"
-        else:
-            self.download_path = os.path.join(os.path.expanduser("~"), "Downloads", "hyundai_auto")
-        
-        os.makedirs(self.download_path, exist_ok=True)
-        
         logger.info("🏢 라포랩스 현대카드 자동화 봇 시작")
-        logger.info(f"환경: {'CI (GitHub Actions)' if self.is_ci else '로컬'}")
+        logger.info(f"환경: {'CI (GitHub Actions)' if self.is_ci else 'Local'}")
         logger.info(f"다운로드 경로: {self.download_path}")
         
-    def init_chrome_driver(self):
-        """Chrome WebDriver 초기화 (GitHub Actions 호환)"""
-        try:
-            logger.info("🤖 Chrome WebDriver 초기화 중...")
-            
-            chrome_options = Options()
-            
-            # 공통 설정
-            chrome_options.add_experimental_option("prefs", {
-                "download.default_directory": self.download_path,
-                "download.prompt_for_download": False,
-                "plugins.always_open_pdf_externally": True,
-                "safebrowsing.enabled": False
-            })
-            
-            chrome_options.add_argument("--window-size=1920,1080")
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--disable-extensions")
-            chrome_options.add_argument("--disable-plugins")
-            chrome_options.add_argument("--disable-infobars")
-            
-            # CI 환경 설정
-            if self.is_ci:
-                logger.info("💻 GitHub Actions 환경 감지 - Headless 모드 활성화")
-                chrome_options.add_argument("--headless=new")
-                chrome_options.add_argument("--disable-crash-reporter")
-            else:
-                logger.info("💻 로컬 환경 - GUI 모드")
-            
-            # Chrome 바이너리 경로 설정 (여러 가능성 확인)
-            chrome_bin_candidates = [
-                os.getenv('CHROME_BIN'),
-                '/usr/bin/chromium-browser',
-                '/usr/bin/google-chrome',
-                '/usr/bin/chromium',
-                '/snap/chromium/current/usr/bin/chromium'
-            ]
-            
-            chrome_bin = None
-            for candidate in chrome_bin_candidates:
-                if candidate and os.path.exists(candidate):
-                    chrome_bin = candidate
-                    logger.info(f"✅ Chrome 바이너리 발견: {chrome_bin}")
-                    break
-            
-            if chrome_bin:
-                chrome_options.binary_location = chrome_bin
-            else:
-                logger.warning("⚠️ Chrome 바이너리를 찾을 수 없음, 기본 설정 사용")
-            
-            # ChromeDriver 설정
-            try:
-                chromedriver_path = os.getenv('CHROMEDRIVER_PATH')
-                if chromedriver_path and os.path.exists(chromedriver_path):
-                    service = Service(chromedriver_path)
-                    logger.info(f"✅ ChromeDriver: {chromedriver_path}")
-                else:
-                    # webdriver-manager 사용 (자동 관리)
-                    chromedriver_path = ChromeDriverManager().install()
-                    service = Service(chromedriver_path)
-                    logger.info(f"✅ ChromeDriver (webdriver-manager): {chromedriver_path}")
-            except Exception as e:
-                logger.warning(f"ChromeDriver 자동 설정 실패, 기본 설정 사용: {e}")
-                service = Service()
-            
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # 타임아웃 설정
-            driver.set_page_load_timeout(30)
-            driver.set_script_timeout(30)
-            
-            logger.info("✅ Chrome WebDriver 초기화 성공")
-            return driver
-            
-        except Exception as e:
-            logger.error(f"❌ Chrome WebDriver 초기화 실패: {e}")
-            raise
-    
     def authenticate(self):
         """OAuth 2.0 인증"""
         logger.info("🔐 OAuth 인증 중...")
@@ -180,58 +89,48 @@ class HyundaiCardBot:
                 logger.warning(f"기존 토큰 로드 실패: {e}")
                 if os.path.exists('token.pickle'):
                     os.remove('token.pickle')
-                creds = None
         
-        # 토큰 갱신
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                logger.info("🔄 토큰 갱신 중...")
-                creds.refresh(Request())
-                logger.info("✅ 토큰 갱신 완료")
-            except Exception as e:
-                logger.warning(f"토큰 갱신 실패: {e}")
-                creds = None
-        
-        # 새 인증 필요
+        # 토큰 갱신 또는 새 인증
         if not creds or not creds.valid:
-            logger.info("새 OAuth 인증이 필요합니다...")
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    logger.info("🔄 토큰 갱신 중...")
+                    creds.refresh(Request())
+                    logger.info("✅ 토큰 갱신 완료")
+                except Exception as e:
+                    logger.warning(f"토큰 갱신 실패: {e}")
+                    creds = None
             
-            # 클라이언트 자격증명 파일 찾기
-            client_files = ['client_secret.json', 'credentials.json', 'oauth_credentials.json']
-            client_file = None
-            
-            for file in client_files:
-                if os.path.exists(file):
-                    client_file = file
-                    logger.info(f"✅ OAuth 파일 발견: {client_file}")
-                    break
-            
-            if not client_file:
-                logger.error("❌ OAuth 클라이언트 자격증명 파일을 찾을 수 없습니다!")
-                logger.error("다음 파일 중 하나를 현재 폴더에 두세요:")
+            if not creds or not creds.valid:
+                logger.info("새 OAuth 인증 시작...")
+                
+                # 클라이언트 자격증명 파일 찾기
+                client_files = ['client_secret.json', 'credentials.json', 'oauth_credentials.json']
+                client_file = None
+                
                 for file in client_files:
-                    logger.error(f"  - {file}")
-                return None
-            
-            # CI 환경에서는 로컬 서버 사용 불가
-            if self.is_ci:
-                logger.error("❌ CI 환경에서 새 인증 불가")
-                logger.error("GitHub Secrets에 token.pickle (base64)을 미리 저장해야 합니다.")
-                return None
-            
-            try:
-                flow = InstalledAppFlow.from_client_secrets_file(client_file, self.SCOPES)
-                creds = flow.run_local_server(port=0)
-                logger.info("✅ 새 인증 완료")
-            except Exception as e:
-                logger.error(f"OAuth 인증 실패: {e}")
-                return None
+                    if os.path.exists(file):
+                        client_file = file
+                        logger.info(f"OAuth 파일 발견: {client_file}")
+                        break
+                
+                if not client_file:
+                    logger.error("OAuth 클라이언트 자격증명 파일을 찾을 수 없습니다!")
+                    return None
+                
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(client_file, self.SCOPES)
+                    creds = flow.run_local_server(port=0)
+                    logger.info("✅ 새 인증 완료")
+                except Exception as e:
+                    logger.error(f"OAuth 인증 실패: {e}")
+                    return None
             
             # 토큰 저장
             try:
                 with open('token.pickle', 'wb') as token:
                     pickle.dump(creds, token)
-                logger.info("✅ 토큰 저장 완료")
+                logger.info("토큰 저장 완료")
             except Exception as e:
                 logger.error(f"토큰 저장 실패: {e}")
         
@@ -239,23 +138,24 @@ class HyundaiCardBot:
         return creds
     
     def find_hyundai_email(self, gmail_service):
-        """현대카드 이메일 찾기 (재시도 로직 포함)"""
+        """현대카드 이메일 찾기"""
         try:
             logger.info("📧 현대카드 이메일 검색 중...")
             
+            # 검색 쿼리들
             queries = [
                 'from:"현대카드 MY COMPANY" subject:"라포랩스 보유내역" has:attachment newer_than:14d',
                 'from:"현대카드 MY COMPANY" subject:"보유내역" has:attachment newer_than:14d',
-                'from:"현대카드" subject:"보유내역" has:attachment newer_than:21d',
-                'from:"MY COMPANY" has:attachment newer_than:21d',
-                'from:"현대카드" has:attachment newer_than:30d'
+                'from:"현대카드 MY COMPANY" has:attachment newer_than:21d',
+                'from:"현대카드" subject:"라포랩스 보유내역" has:attachment newer_than:14d',
+                'from:"MY COMPANY" subject:"보유내역" has:attachment newer_than:21d'
             ]
             
             all_messages = []
             
             for query in queries:
                 try:
-                    logger.info(f"  검색 쿼리: {query[:40]}...")
+                    logger.info(f"  검색 쿼리: {query[:50]}...")
                     results = gmail_service.users().messages().list(
                         userId='me',
                         q=query,
@@ -266,9 +166,6 @@ class HyundaiCardBot:
                     all_messages.extend(messages)
                     logger.info(f"    → {len(messages)}개 발견")
                     
-                    if messages:
-                        break  # 첫 번째 쿼리에서 결과 있으면 종료
-                        
                 except Exception as e:
                     logger.warning(f"  검색 오류: {e}")
                     continue
@@ -277,7 +174,7 @@ class HyundaiCardBot:
                 logger.error("❌ 현대카드 이메일을 찾을 수 없습니다.")
                 return None
             
-            # 중복 제거 및 최신 선택
+            # 중복 제거
             unique_messages = {msg['id']: msg for msg in all_messages}
             latest_id = list(unique_messages.keys())[0]
             
@@ -293,23 +190,30 @@ class HyundaiCardBot:
         try:
             logger.info("📥 HTML 첨부파일 다운로드 중...")
             
+            # 메시지 상세 정보
             message = gmail_service.users().messages().get(
                 userId='me',
                 id=message_id,
                 format='full'
             ).execute()
             
-            # 제목과 발신자 추출
+            # 제목 확인
             headers = message['payload'].get('headers', [])
-            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'Unknown')
-            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown')
+            subject = ""
+            sender = ""
+            
+            for header in headers:
+                if header['name'].lower() == 'subject':
+                    subject = header['value']
+                elif header['name'].lower() == 'from':
+                    sender = header['value']
             
             logger.info(f"📧 제목: {subject}")
             logger.info(f"📧 발신자: {sender}")
             
-            # HTML 첨부파일 재귀 검색
+            # HTML 첨부파일 찾기
             def find_html_attachment(part):
-                if part.get('filename') and part['filename'].lower().endswith(('.html', '.htm')):
+                if part.get('filename') and part.get('filename').lower().endswith(('.html', '.htm')):
                     return part
                 if 'parts' in part:
                     for subpart in part['parts']:
@@ -359,147 +263,188 @@ class HyundaiCardBot:
             return None
     
     def process_secure_email(self, html_file):
-        """보안메일 처리 (Selenium 사용)"""
+        """보안메일 처리"""
         driver = None
         try:
             logger.info("🔐 보안메일 처리 시작...")
             
-            driver = self.init_chrome_driver()
-            wait = WebDriverWait(driver, 20)
+            # HTML 파일 유효성 확인
+            file_size = os.path.getsize(html_file)
+            logger.info(f"📄 파일 크기: {file_size} bytes")
             
-            logger.info("✅ Chrome 브라우저 실행 완료")
+            if file_size < 10000:
+                logger.warning("⚠️ HTML 파일이 너무 작습니다 (손상 가능성)")
+                with open(html_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read(500)
+                    logger.info(f"파일 시작: {content[:200]}")
+            
+            # Chrome 설정
+            chrome_options = Options()
+            chrome_options.add_experimental_option("prefs", {
+                "download.default_directory": self.download_path,
+                "download.prompt_for_download": False,
+                "profile.default_content_settings.popups": 0,
+            })
+            
+            if self.is_ci:
+                logger.info("💻 GitHub Actions 환경 감지 - Headless 모드 활성화")
+                chrome_options.add_argument("--headless=new")
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--disable-extensions")
+                chrome_options.add_argument("--disable-sync")
+                chrome_options.add_argument("--disable-plugins")
+                chrome_options.add_argument("--disable-application-cache")
+                chrome_options.add_argument("--no-first-run")
+            else:
+                chrome_options.add_argument("--window-size=1400,900")
+            
+            # 바이너리 경로 자동 감지
+            chrome_bin = os.environ.get('CHROME_BIN')
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH')
+            
+            if chrome_bin and os.path.exists(chrome_bin):
+                chrome_options.binary_location = chrome_bin
+                logger.info(f"✅ Chrome 바이너리: {chrome_bin}")
+            
+            if chromedriver_path and os.path.exists(chromedriver_path):
+                logger.info(f"✅ ChromeDriver: {chromedriver_path}")
+                service = Service(chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                logger.info("✅ Selenium Manager로 자동 관리")
+                driver = webdriver.Chrome(options=chrome_options)
+            
+            logger.info("✅ Chrome 브라우저 초기화 성공")
             
             # HTML 파일 열기
             file_url = f"file://{os.path.abspath(html_file)}"
             logger.info(f"📄 HTML 파일 로드: {os.path.basename(html_file)}")
-            driver.get(file_url)
             
+            driver.get(file_url)
             time.sleep(5)
             
-            # 페이지 HTML 디버그 출력
-            logger.info("🔍 페이지 HTML 분석...")
-            page_html = driver.page_source[:2000]
-            logger.info(f"페이지 HTML 일부: {page_html}")
+            # 페이지 HTML 확인
+            page_html = driver.page_source
+            logger.info(f"🔍 페이지 HTML 분석...")
+            logger.info(f"페이지 HTML 일부: {page_html[:200]}")
             
-            # 모든 input 요소 찾기
+            # 페이지의 모든 input 요소 개수
             all_inputs = driver.find_elements(By.TAG_NAME, "input")
             logger.info(f"전체 input 요소 개수: {len(all_inputs)}")
             
-            for idx, inp in enumerate(all_inputs):
-                try:
-                    name = inp.get_attribute("name")
-                    input_type = inp.get_attribute("type")
-                    inp_id = inp.get_attribute("id")
-                    displayed = inp.is_displayed()
-                    logger.info(f"  [{idx}] name={name}, type={input_type}, id={inp_id}, displayed={displayed}")
-                except:
-                    pass
+            if len(all_inputs) == 0:
+                logger.warning("⚠️ 입력 필드가 없습니다. 페이지 새로고침 시도...")
+                driver.refresh()
+                time.sleep(5)
+                all_inputs = driver.find_elements(By.TAG_NAME, "input")
+                logger.info(f"새로고침 후 input 요소 개수: {len(all_inputs)}")
             
             # 인증번호 입력 필드 찾기
             logger.info("🔍 인증번호 입력 필드 찾기...")
             
-            input_field = None
-            selectors = [
-                "input[name='p2']",
-                "input[name='p2_temp']",
-                "input[type='password']",
-                "input[type='text']",
-                "input"
-            ]
+            auth_input = None
             
-            for selector in selectors:
+            # 방법 1: p2_temp 클릭 후 p2에 입력
+            try:
+                logger.info("  시도 1: p2_temp → p2 방식")
+                temp_input = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.NAME, "p2_temp"))
+                )
+                if temp_input.is_displayed():
+                    temp_input.click()
+                    time.sleep(2)
+                    
+                    try:
+                        password_input = driver.find_element(By.NAME, "p2")
+                        if password_input.is_displayed():
+                            auth_input = password_input
+                            logger.info("  ✅ p2 필드로 전환 성공")
+                    except:
+                        pass
+            except:
+                pass
+            
+            # 방법 2: p2 직접 접근
+            if not auth_input:
                 try:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    logger.info(f"  선택자 '{selector}' → {len(elements)}개 발견")
-                    
-                    for element in elements:
-                        try:
-                            if element.is_displayed():
-                                input_field = element
-                                logger.info(f"✅ 입력 필드 발견: {selector}")
-                                break
-                        except:
-                            pass
-                    
-                    if input_field:
-                        break
-                except Exception as e:
-                    logger.warning(f"  선택자 '{selector}' 오류: {e}")
-                    continue
+                    logger.info("  시도 2: p2 직접 접근")
+                    auth_input = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.NAME, "p2"))
+                    )
+                    if auth_input.is_displayed():
+                        logger.info("  ✅ p2 필드 발견")
+                except:
+                    pass
             
-            if not input_field:
+            # 방법 3: CSS 선택자로 검색
+            if not auth_input:
+                selectors = [
+                    ("input[type='password']", "password 타입"),
+                    ("input[name='p2_temp']", "p2_temp"),
+                    ("input[type='text']", "text 타입"),
+                    ("input[placeholder*='번호']", "placeholder 번호"),
+                    ("input[placeholder*='인증']", "placeholder 인증"),
+                ]
+                
+                for selector, desc in selectors:
+                    try:
+                        logger.info(f"  시도: {desc}")
+                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                        for elem in elements:
+                            if elem.is_displayed() and elem.is_enabled():
+                                auth_input = elem
+                                logger.info(f"  ✅ {desc} 필드 발견")
+                                break
+                        if auth_input:
+                            break
+                    except:
+                        pass
+            
+            if not auth_input:
                 logger.error("❌ 인증번호 입력 필드를 찾을 수 없습니다.")
                 logger.error("페이지 소스를 저장합니다...")
-                with open("/tmp/hyundai_auto/page_source.html", "w", encoding="utf-8") as f:
-                    f.write(driver.page_source)
+                
+                # 디버그 파일 저장
+                debug_file = os.path.join(self.download_path, "debug_page_source.html")
+                with open(debug_file, 'w', encoding='utf-8') as f:
+                    f.write(page_html)
+                logger.info(f"디버그 파일: {debug_file}")
+                
+                # 모든 input 요소 정보
+                logger.info("페이지의 모든 input 요소:")
+                for i, inp in enumerate(all_inputs[:10]):
+                    name = inp.get_attribute('name')
+                    type_attr = inp.get_attribute('type')
+                    placeholder = inp.get_attribute('placeholder')
+                    logger.info(f"  [{i}] name={name}, type={type_attr}, placeholder={placeholder}")
+                
                 return None
             
             # 인증번호 입력
-            try:
-                input_field.click()
-                time.sleep(1)
-                input_field.clear()
-                time.sleep(0.5)
-                input_field.send_keys(self.AUTH_CODE)
-                logger.info(f"✅ 인증번호 입력: {self.AUTH_CODE}")
-                
-                # 엔터키로 폼 제출
-                input_field.send_keys(Keys.RETURN)
-                logger.info("✅ 엔터키로 폼 제출")
-                
-            except Exception as e:
-                logger.warning(f"입력 필드 조작 실패, JavaScript 시도: {e}")
-                driver.execute_script(f"document.getElementsByName('p2')[0].value = '{self.AUTH_CODE}';")
-                logger.info(f"✅ JavaScript로 인증번호 입력: {self.AUTH_CODE}")
-                
-                # 폼 제출
-                try:
-                    driver.execute_script("document.getElementById('decForm').submit();")
-                except:
-                    # 대체 제출 방법
-                    driver.execute_script("document.querySelector('form').submit();")
-                logger.info("✅ JavaScript로 폼 제출")
+            logger.info(f"✍️ 인증번호 입력: {self.AUTH_CODE}")
+            auth_input.click()
+            time.sleep(0.5)
+            auth_input.clear()
+            time.sleep(0.5)
+            auth_input.send_keys(self.AUTH_CODE)
+            time.sleep(1)
             
-            logger.info("⏳ 폼 제출 후 페이지 로딩 대기...")
+            logger.info("✅ 인증번호 입력 완료")
+            
+            # 폼 제출
+            logger.info("📤 폼 제출...")
+            auth_input.send_keys(Keys.RETURN)
             time.sleep(10)
             
-            # ZIP 다운로드 링크 클릭
-            logger.info("📦 ZIP 다운로드 링크 찾기...")
-            
-            try:
-                # 다운로드 링크 찾기
-                download_link = None
-                for selector in ["a[href*='.zip']", "a[download]", "a"]:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    for element in elements:
-                        try:
-                            href = element.get_attribute('href') or ''
-                            text = element.text.strip()
-                            if '.zip' in href.lower() or '.zip' in text.lower() or '다운로드' in text:
-                                download_link = element
-                                break
-                        except:
-                            continue
-                    if download_link:
-                        break
-                
-                if download_link:
-                    try:
-                        download_link.click()
-                    except:
-                        driver.execute_script("arguments[0].click();", download_link)
-                    logger.info("✅ ZIP 다운로드 시작")
-                else:
-                    logger.warning("⚠️ 다운로드 링크를 찾을 수 없음")
-                    
-            except Exception as e:
-                logger.warning(f"다운로드 링크 클릭 실패: {e}")
-            
             # ZIP 다운로드 대기
-            logger.info("⏳ ZIP 파일 다운로드 대기...")
+            logger.info("📦 ZIP 다운로드 대기...")
             
             start_time = time.time()
-            while (time.time() - start_time) < 120:  # 2분 타임아웃
+            max_wait = 120  # 2분
+            
+            while (time.time() - start_time) < max_wait:
                 time.sleep(2)
                 
                 zip_files = list(Path(self.download_path).glob("*.zip"))
@@ -515,7 +460,7 @@ class HyundaiCardBot:
                 if elapsed % 20 == 0:
                     logger.info(f"  대기 중... {elapsed}초")
             
-            logger.error("❌ ZIP 다운로드 타임아웃 (120초)")
+            logger.error("❌ ZIP 다운로드 타임아웃")
             return None
             
         except Exception as e:
@@ -539,8 +484,9 @@ class HyundaiCardBot:
             zip_path = Path(zip_file)
             extract_path = zip_path.parent / f"{zip_path.stem}_extracted"
             
-            # 기존 폴더 정리
+            # 기존 폴더 삭제
             if extract_path.exists():
+                import shutil
                 shutil.rmtree(extract_path)
             
             extract_path.mkdir()
@@ -551,7 +497,7 @@ class HyundaiCardBot:
                     zip_ref.extractall(extract_path)
                 logger.info("✅ 압축 해제 완료")
             except Exception as e:
-                logger.warning(f"표준 압축 해제 실패: {e}, 대체 방법 시도")
+                logger.warning(f"압축 해제 실패, 대체 방법 시도: {e}")
                 with zipfile.ZipFile(zip_file, 'r') as zip_ref:
                     for member in zip_ref.namelist():
                         try:
@@ -571,27 +517,24 @@ class HyundaiCardBot:
             logger.info(f"📊 엑셀 파일: {excel_file.name}")
             
             # 엑셀 데이터 읽기
-            try:
-                xl = pd.ExcelFile(excel_file)
-                sheet_names = xl.sheet_names
-                logger.info(f"📋 시트 목록: {sheet_names}")
-                
-                # 두 번째 시트 우선
-                sheet_name = sheet_names[1] if len(sheet_names) > 1 else sheet_names[0]
-                logger.info(f"선택된 시트: {sheet_name}")
-                
-                df = pd.read_excel(excel_file, sheet_name=sheet_name)
-                df = df.dropna(how='all').dropna(axis=1, how='all')
-                
-                logger.info(f"✅ 데이터 읽기 완료: {len(df)}행 × {len(df.columns)}열")
-                return df
-                
-            except Exception as e:
-                logger.error(f"엑셀 읽기 실패: {e}")
-                return None
+            xl = pd.ExcelFile(excel_file)
+            sheet_names = xl.sheet_names
+            logger.info(f"📋 시트 목록: {sheet_names}")
+            
+            # 두 번째 시트 우선
+            sheet_name = sheet_names[1] if len(sheet_names) > 1 else sheet_names[0]
+            logger.info(f"선택된 시트: {sheet_name}")
+            
+            df = pd.read_excel(excel_file, sheet_name=sheet_name)
+            df = df.dropna(how='all').dropna(axis=1, how='all')
+            
+            logger.info(f"✅ 데이터 읽기 완료: {len(df)}행 × {len(df.columns)}열")
+            return df
             
         except Exception as e:
             logger.error(f"❌ ZIP 처리 실패: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def update_spreadsheet(self, gspread_client, data):
@@ -605,7 +548,7 @@ class HyundaiCardBot:
                 worksheet = spreadsheet.worksheet(self.SHEET_NAME)
             except:
                 worksheet = spreadsheet.add_worksheet(title=self.SHEET_NAME, rows=1000, cols=26)
-                logger.info(f"✅ 새 워크시트 생성: {self.SHEET_NAME}")
+                logger.info(f"새 워크시트 생성: {self.SHEET_NAME}")
             
             # 기존 데이터 삭제
             worksheet.clear()
@@ -631,7 +574,7 @@ class HyundaiCardBot:
             logger.error(f"❌ 스프레드시트 업데이트 실패: {e}")
             return False
     
-    def run_automation(self):
+    def run(self):
         """전체 자동화 실행"""
         logger.info("🚀 현대카드 자동화 시작!")
         logger.info("="*60)
@@ -643,7 +586,6 @@ class HyundaiCardBot:
             logger.info("\n1️⃣ OAuth 인증...")
             creds = self.authenticate()
             if not creds:
-                logger.error("OAuth 인증 실패")
                 return False
             
             # 2. Google 서비스 생성
@@ -696,49 +638,28 @@ class HyundaiCardBot:
             traceback.print_exc()
             return False
 
-
 def main():
     """메인 실행 함수"""
-    logger.info("🏢 라포랩스 현대카드 OAuth 자동화")
+    logger.info("🏢 라포랱스 현대카드 OAuth 자동화")
     logger.info("📧 Gmail → HTML → 보안메일 → Google Sheets")
-    logger.info("="*60)
-    
-    # CI 환경이면 자동 실행
-    is_ci = os.environ.get('CI') == 'true' or os.environ.get('GITHUB_ACTIONS') == 'true'
-    
-    if is_ci:
-        logger.info("\n🤖 CI 환경에서 자동 실행 중...")
-    else:
-        logger.info("\n📋 확인사항:")
-        logger.info("✅ client_secret.json 파일")
-        logger.info("✅ token.pickle (또는 새 인증 진행)")
-        logger.info("✅ Chrome 브라우저")
-        response = input("\n🚀 자동화를 시작하시겠습니까? (y/N): ").strip().lower()
-        if response != 'y':
-            logger.info("자동화를 취소했습니다.")
-            return
+    logger.info("="*50)
     
     try:
         bot = HyundaiCardBot()
-        success = bot.run_automation()
+        success = bot.run()
         
         if success:
             logger.info("\n🎊 자동화 성공!")
-            sys.exit(0)
         else:
             logger.error("\n😞 자동화 실패")
             logger.error("hyundai_automation.log 파일을 확인해주세요.")
-            sys.exit(1)
     
     except KeyboardInterrupt:
         logger.info("\n⏹️ 사용자 중단")
-        sys.exit(0)
     except Exception as e:
         logger.error(f"\n💥 오류: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
