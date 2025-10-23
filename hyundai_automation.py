@@ -436,13 +436,74 @@ class HyundaiCardBot:
             # 폼 제출
             logger.info("📤 폼 제출...")
             auth_input.send_keys(Keys.RETURN)
-            time.sleep(10)
+            time.sleep(5)
+            
+            # 페이지 변화 확인 및 ZIP 링크 찾기
+            logger.info("🔄 다운로드 페이지 로드 대기...")
+            time.sleep(5)
+            
+            current_url = driver.current_url
+            logger.info(f"현재 URL: {current_url}")
+            
+            # ZIP 파일 링크 찾기
+            logger.info("🔎 ZIP 다운로드 링크 검색...")
+            
+            all_links = driver.find_elements(By.TAG_NAME, "a")
+            logger.info(f"페이지의 총 링크 개수: {len(all_links)}")
+            
+            zip_links = []
+            for i, link in enumerate(all_links):
+                href = link.get_attribute('href') or ''
+                text = link.text.strip()
+                onclick = link.get_attribute('onclick') or ''
+                
+                # 디버깅: 모든 링크 출력
+                if i < 15:  # 처음 15개 링크만 출력
+                    logger.info(f"  [{i}] href={href[:60]}, text={text[:50]}, onclick={onclick[:50]}")
+                
+                # ZIP 파일 링크 조건
+                if '.zip' in href.lower() or (text and '.zip' in text.lower()):
+                    zip_links.append((i, link, href, text))
+                    logger.info(f"✅ ZIP 링크 발견 [{i}]: {text or href}")
+            
+            if not zip_links:
+                logger.warning("ZIP 링크를 찾을 수 없음. 파일명이 보이는 링크를 찾습니다...")
+                # 숫자와 언더스코어 패턴의 링크 찾기 (예: 0191_0_로감정_2025102251192_7.zip)
+                for i, link in enumerate(all_links):
+                    text = link.text.strip()
+                    href = link.get_attribute('href') or ''
+                    
+                    # 숫자로 시작하고 .zip 형식인지 확인
+                    if text and text[0].isdigit() and '_' in text:
+                        logger.info(f"✅ 파일명 링크 발견 [{i}]: {text}")
+                        zip_links.append((i, link, href, text))
+            
+            if zip_links:
+                # 첫 번째 ZIP 링크 클릭
+                idx, link, href, text = zip_links[0]
+                logger.info(f"파일 다운로드 링크 클릭: {text}")
+                
+                try:
+                    # 링크 클릭
+                    link.click()
+                    logger.info("✅ 다운로드 링크 클릭 완료")
+                except Exception as e:
+                    logger.warning(f"일반 클릭 실패: {e}, JavaScript로 시도...")
+                    try:
+                        driver.execute_script("arguments[0].click();", link)
+                        logger.info("✅ JavaScript 클릭 완료")
+                    except Exception as e2:
+                        logger.error(f"JavaScript 클릭도 실패: {e2}")
+            else:
+                logger.error("❌ ZIP 다운로드 링크를 찾을 수 없습니다")
+                return None
             
             # ZIP 다운로드 대기
             logger.info("📦 ZIP 다운로드 대기...")
             
             start_time = time.time()
             max_wait = 120  # 2분
+            found_zip = False
             
             while (time.time() - start_time) < max_wait:
                 time.sleep(2)
@@ -453,14 +514,26 @@ class HyundaiCardBot:
                 if zip_files and not downloading:
                     latest_zip = max(zip_files, key=lambda x: x.stat().st_mtime)
                     if latest_zip.stat().st_size > 0:
-                        logger.info(f"✅ ZIP 다운로드 완료: {latest_zip.name}")
+                        logger.info(f"✅ ZIP 다운로드 완료: {latest_zip.name} ({latest_zip.stat().st_size} bytes)")
+                        found_zip = True
                         return str(latest_zip)
                 
                 elapsed = int(time.time() - start_time)
                 if elapsed % 20 == 0:
-                    logger.info(f"  대기 중... {elapsed}초")
+                    logger.info(f"  대기 중... {elapsed}초 (진행 중: {len(downloading)}개, 완료: {len(zip_files)}개)")
             
-            logger.error("❌ ZIP 다운로드 타임아웃")
+            if not found_zip:
+                logger.error("❌ ZIP 다운로드 타임아웃")
+                
+                # 다운로드 폴더 파일 목록
+                try:
+                    all_files = list(Path(self.download_path).glob("*"))
+                    logger.info(f"다운로드 폴더 파일 ({len(all_files)}개):")
+                    for f in sorted(all_files, key=lambda x: x.stat().st_mtime, reverse=True)[:10]:
+                        logger.info(f"  - {f.name} ({f.stat().st_size} bytes)")
+                except:
+                    pass
+            
             return None
             
         except Exception as e:
