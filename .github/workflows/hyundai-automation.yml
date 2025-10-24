@@ -2,13 +2,12 @@ name: Hyundai Card Automation
 
 on:
   schedule:
-    # 현재시간 + 1분으로 테스트
-    - cron: '* * * * *'  # 매 분마다
+    - cron: '*/5 * * * *'  # 5분마다 실행
   workflow_dispatch:
 
 jobs:
   automation:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     
     steps:
       - name: Checkout repository
