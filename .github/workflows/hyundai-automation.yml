@@ -2,9 +2,8 @@ name: Hyundai Card Automation
 
 on:
   schedule:
-    # 평일 월~금 오전 9시 (UTC 기준, 한국시간은 UTC+9)
-    # 한국 오전 9시 = UTC 00:00
-    - cron: '0 0 * * 1-5'
+    # 현재시간 + 1분으로 테스트
+    - cron: '* * * * *'  # 매 분마다
   workflow_dispatch:
 
 jobs:
